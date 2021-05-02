@@ -13,13 +13,14 @@ Here we limit ourselves to **binary classes** (person or background) and use onl
 3. Prisma-Net
 4. Portrait-Net
 5. Slim-Net
+6. SINet
 
 The models were trained with standard(and custom) **portrait datasets** and their performance was compared with the help of  standard **evaluation metrics and benchmarking** tools. Finally, the models were deployed on **edge devices**, using popular embedded(mobile) machine-learning platforms for **real-time inference**.
 
 ## Dependencies
 
 * Tensorflow(>=1.14.0), Python 3
-* Keras(>=2.2.4), Kito, Scipy
+* Keras(>=2.2.4), Kito, Scipy, Dlib
 * Opencv(>=3.4), PIL, Matplotlib
 
 ```
@@ -46,6 +47,19 @@ Besides the aforesaid augmentation techniques, we **normalize(also standardize)*
 
 **AISegment**: It is a human matting dataset for **binary segmentation** of humans and their background. This dataset is currently the largest portrait matting dataset, containing **34,427 images** and corresponding matting results. The data set was marked by the high quality of Beijing Play Star Convergence Technology Co., Ltd., and the portrait soft segmentation model trained using this data set has been **commercialized**.
 
+**Dataset Links:-**
+
+1. [Portseg_128](https://drive.google.com/file/d/1UBLzvcqvt_fin9Y-48I_-lWQYfYpt_6J/view)
+2. [Portrait_256](https://drive.google.com/file/d/1FQHaMrsFyxUv5AtwjfPD0gtmEVFM7w3X/view?usp=sharing)
+3. [PFCN](https://1drv.ms/u/s!ApwdOxIIFBH19Ts5EuFd9gVJrKTo)
+4. [AISegment](https://datasetsearch.research.google.com/search?query=portrait%20segmentation&docid=O3kWsG%2FOg%2FZspufiAAAAAA%3D%3D)
+5. [Baidu_Aug](https://drive.google.com/file/d/1zkh7gAhWwoX1nR5GzTzBziG8tgTKtr73/view?usp=sharing)
+6. [Supervisely](https://supervise.ly/explore/projects/supervisely-person-dataset-23304/datasets)
+7. [Pascal_Person](https://github.com/PINTO0309/TensorflowLite-UNet/tree/master/data_set/VOCdevkit/person)
+8. [Supervisely Portrait](https://www.dropbox.com/s/bv8r5vmjc52a8s6/supervisely_portrait.zip)
+
+Also checkout the datset: [UCF Selfie](https://www.crcv.ucf.edu/data/Selfie)
+
 ### Annotation Tools
 
 A [good dataset](https://hackernoon.com/stop-feeding-garbage-to-your-model-the-6-biggest-mistakes-with-datasets-and-how-to-avoid-them-3cb7532ad3b7) is always the first step for coming up with a robust and and accurate model, especially in the case of semantic segmentation. There are many standard datsets available for portrait(or person) segmentation like **PFCN, MSCOCO Person, PascalVOV Person, Supervisely** etc. But it seems that either the **quality or quantity** of the images are still insufficient for our use case. So, it would be a good idea to **collect custom images** for our training process. It is easy to collect images and create ground truth for tasks like classification or object detection; but for semantic segmentation we need to be extra-careful regarding the **quality of masks**. Also, data collection and annotation takes a lot of **time and effort**, compared to other computer vision tasks. 
@@ -59,7 +73,10 @@ Here are some tools for **annotation and data collection** which i found to be u
 
 If you are planning to use the model on mobile phones specifically for **portrait selfies**, it would be a good idea to include lots of such **portrait images captured using mobile phones** in your dataset.
 
-Also checkout the datset: [UCF Selfie](https://www.crcv.ucf.edu/data/Selfie)
+The following are some examples of the **tools/models** which offers reasonable **accuracy** and flexibility.
+
+* **unscreen.com**: An automatic online tool for removing backgrounds from videos(paid).
+* **MODNet** : A real-time portrait video matting model with very high accuracy(open-source).
 
 ## Mobile-Unet Architecture
 
@@ -275,6 +292,95 @@ The **slim-net** model for portrait segmentation was successfully trained using 
 
 The model seems to perform well on **still images**; but on videos in mobile it shows some flickering effect.
 
+#### SINet: Extreme Lightweight Portrait Segmentation
+
+SINet is an **lightweight** portrait segmentaion dnn architecture for mobile devices. The  model which contains around **86.9 K parameters** is able to run at **100 FPS** on iphone (input size -224) , while maintaining the **accuracy** under an 1% margin from the state-of-the-art portrait segmentation method. The proposed portrait segmentation model conatins two new modules for fast and accurate segmentaion viz. **information blocking decoder structure and spatial squeeze modules**.
+
+![Screenshot](SINet/SINet_Architecture.png)
+
+1. **Information Blocking Decoder**: It measures the confidence in a low-resolution feature map, and blocks the influence of high-resolution feature maps in
+highly confident pixels. This prevents noisy information to ruin already certain areas, and allows the model to focuson regions with high uncertainty.  
+
+2. **Spatial Squeeze Modules**: The S2 module is an efficient multipath network for feature extraction. Existing multi-path structures deal with the various size of long-range dependencies by managing multiple receptive fields. However, this increases latency in real implementations, due to having unsuitable structure with regard to kernel launching and synchronization. To mitigate this problem, they squeeze the spatial resolution from each feature map by average pooling, and show that this is more effective than adopting multi-receptive fields.
+
+
+Besides the aforementioned features, the SINet architecture uses **depthwise separable convolution and PReLU actiavtion** in the encoder modules. They also use **Squeeze-and-Excitation** (SE) blocks that adaptively recalibrates channel-wise feature responses by explicitly modelling interdependencies between channels, for improving the model accuracy. For training, they used cross entropy loss with additional **boundary refinement**. In general it is **faster and smaller** than most of the  portrait segmentaion models; but in terms of accuracy it falls behind portrait-net model by a small margin. The model seems to be **faster than mobilentv3** in iOS; but in android it seems likely to make only a marginal difference(due to optimized tflite swish operator).
+
+
+We trained the sinet model with **aisegment + baidu portrait** dataset using input size **320** and cross entropy loss function, for 600 epochs and achieved an **mIOU of  97.5%**. The combined dataset consists of around **80K images**(train+val), after data augmentaion. The final trained model has a size of **480kB** and **86.91K parameters**. Finally, the pytorch model was exported to ONNX and CoreML formats for mobile deployment.
+
+![Screenshot](SINet/SINet_Result.png)
+
+In practice the model works well with **simple portrait images**; but for videos with more background regions the model produces **artefacts** on the output during inference. Unfortunaltely both the original models and aisegment retrained models suffer from this problem, even after acheiving 95% mIOU after training. In the worst case scenario, we may need to run a **localizer** over the image and crop out the tightly bound roi region containing person before running the segmentation model or apply morphological opening/closing over the output binary mask. But this comes with **additional cost** and would nullify the overall advantage of the light weight segmenation model.
+
+#### Quantizing MobilenetV3 Models With Keras API
+
+**MobileNetV3** is the next generation of on-device deep vision model from google. It is twice as fast as MobileNetV2 with equivalent accuracy, and advances the state-of-the-art for mobile computer vision networks. Here we use minimalistic version of **mobilenetv3** with input size 256 as the encoder part of the network. In the **decoder** module we use **transition blocks** along with upsampling layers , similar to the decoder modules in the portrait-net architecture. There are two branches in this block: one branch contains two **depthwise separable convolutions** and  the other contains a single **1×1 convolution** to adjust the number of channels. For upsampling we use **bilinear resize** along with the transition blocks in the decoder module. In the case of **skip connections** between encoder anmd decoder, we use **element-wise addition** instead of concatenation for faster inference speed.
+
+During training, initially we **freeze** all the layers of encoder  and train it for 10 epochs. After that, we unfreeze all the layers and train the model for additional 10 epochs. Finally, we perform **quantization aware training** on the float model, and convert all of the the models to **tflite** format.
+
+**Observations:-**
+
+1. Using the pretrained mobilnetv3 as the encoder during training greatly improved the **convergence speed**. Also, the input images were normalized to [-1.0, 1.0] range before passing to the model. The float model convegerd to **98% validation accuracy** within first 20 epochs.
+2. Using the latest tensorflow built from source and aisegment dataset with 68852 images, the training process took about **2 hours** for completing **20 epochs**, on a Tesla P100 GPU in google colaboratory.
+3. In the current tensorflow 2.3 and tf model optimization library, some layers like **Rescale, Upsampling2D, Conv2DTranspose** are not supported by the tf.keras Quantization Aware Training API's. For this purpose you have to install the latest **nightly version** or build the same from source. Similarly the mobilenetv3 pretrained models are only available in tf-nightly(currently).
+4. Using **elementwise additon** instead of concatenation on skip connection bewteen encoder and decoder greatly helped us to decrease the model size and improve it's **inference** time.
+5. After quantization aware training, even though the model **size was reduced by 3x**, there was **no considerable loss in model accuracy**.
+6. On **POCO X3** android phone, the float model takes around **17ms on CPU and 9ms on it's GPU** (>100 FPS), whereas the quantized model takes around 15ms on CPU (2 threads). We were unable to run the fully quantized models(UINT8) using nnapi opr hexagon delegate since some of the layers were not fully supported. However we can run them partially on such accelerators with decreased performance(comparatively).
+
+**Android Tflite Benchmark**
+
+To measure the performance of a tflite model on **android** devices, we can use the native binary benchmark tool. It provides a summary of average **execution time and memory** consumption of individual operators on the device(CPU, GPU and DSP). To benchmark the models on your own android device using a linux system, perform the following steps :-
+
+1. Install adb tool on your system.
+```
+sudo apt-get install android-tools-adb android-tools-fastboot.
+```
+2. Connect your phone to system and copy the benchmark tool.
+```
+adb push benchmark_model_latest /data/local/tmp
+```
+3. Make the binary executable.
+```
+adb shell chmod +x /data/local/tmp/benchmark_model
+```
+4. Copy all the tflite models into the device.
+```
+adb push mnv3_post_quant.tflite /data/local/tmp
+adb push mnv3_seg_float.tflite /data/local/tmp
+adb push mnv3_seg_quant.tflite /data/local/tmp
+```
+5. Optionally, copy all the hexagon delegate library files.
+```
+adb push libhexagon_interface.so /data/local/tmp
+adb push libhexagon_nn_skel*.so /data/local/tmp
+```
+6. Finally run the benchmarks on the device.
+```
+adb shell /data/local/tmp/benchmark_model_latest \
+  --graph=/data/local/tmp/mnv3_seg_float.tflite \
+  --num_threads=2 \
+  ----enable_op_profiling=true
+
+adb shell /data/local/tmp/benchmark_model_latest \
+  --graph=/data/local/tmp/mnv3_seg_quant.tflite \
+  --num_threads=2 \
+  --enable_op_profiling=true
+
+adb shell /data/local/tmp/benchmark_model_latest \
+  --graph=/data/local/tmp/mnv3_seg_float.tflite \
+  --use_gpu=true \
+  --enable_op_profiling=true
+
+adb shell /data/local/tmp/benchmark_model_latest \
+  --graph=/data/local/tmp/mnv3_post_quant.tflite \
+  --use_hexagon=true \
+  --hexagon_profiling=true \
+  --enable_op_profiling=true
+```
+**Note:** The benchmark binary and hexagon library files are stored in the directory - libraries and binaries.
+
+
 ### Android Application 
 
 #### SegMe_V0
@@ -327,6 +433,7 @@ Here is a demo video of the application ...
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=JD2oxC8khbY
 " target="_blank"><img src="http://img.youtube.com/vi/JD2oxC8khbY/0.jpg" 
 alt="Video bokeh" width="560" height="315" border="10" /></a>
+ 
 
 ### Model running time
 
@@ -658,7 +765,7 @@ Move the **slider** to change the background image.
   To ensure that your applications runs in a <b>platform independent</b> way(portabe), the easiest way is to implement them as a <b>web-application</b> and run it using a <b>browser</b>.You can easily convert the trained model to tfjs format and run them using javascript with the help of tensorflowjs conversion tools.If you are familiar with <b>React/Vue</b> js , you can easily incorporate the tfjs into you application and come up with a really cool <b>AI webapp</b>, in no time!!!
 </p>
 
-Here is the **link** to the portrait segmentation **webapp**: [CVTRICKS](https://cvtricks.000webhostapp.com/)
+Here is the **link** to the portrait segmentation **webapp**: [CVTRICKS](https://mycvtricks.000webhostapp.com)
 
 If you want to run it **locally**, start a local server using python **SimpleHTTPServer**. Initially configure the **hostname, port and CORS permissions** and then run it using your browser. 
 
@@ -748,6 +855,50 @@ Run the **applications on jetson** devices:-
 
 **Note:** Refer **onnx_nchw_conversion** ipython notebooks for converting **tensorflow/keras** models to onnx_nchw format for deepstream inference. Also,before running the application configure the **webcam properites**(video source and resolution) based on your hardware settings.
 
+### Portrait Segmentaion Using Mediapipe And Slimnet
+
+Mediapipe is an **open-source** framework for developing machine learning application, for **mobile**, desktop, web and IoT devices.
+It can be used to process data in various formats like **images, audio and video streams**. The basic idea is to construct a high-level **pipeline graph** for a ML workflow by integrating a set of modular components for individual operations like **data transformations, model inference, I/O operations**  etc
+
+**Advantages**:-
+
+1. **Portable pipelines**: The same **pipeline graphs** can be developed and deployed on desktops, mobile or IOT devices.
+2. **Rapid prototyping**: Most of the common **image, video and ML operations** can be integrated as **nodes** in the development workflow.
+3. **Documentation and support**: It was developed by **google** and has a very good documentation, with lots of **demo** applications.
+4. **Extensibility**: Custom operations can be easily developed in **opencv(C++)** and integrated into the mediapipe workflow.
+
+**Portrait segmentaion mediapipe graphs**:-
+
+The basic pipeline for **video segmentaion** is described in the mediapipe [hair_segmentaion](https://google.github.io/mediapipe/solutions/hair_segmentation.html#mobile) application. Here, we use our **slimnet model** on the pipeline and segment out the foreground person from the background. Additionally, we apply an **edge detection** filter on the masked background region of the image.
+
+![Screenshot](mediapipe_slimnet/mediapipe_graph.png)
+
+The following are the **steps** for building android application with bazel, mediapipe and tflite:-
+
+1. Install bazel, jdk, **android sdk & ndk**, and mediapipe
+2. Convert the **slim_net** model for portrait segmentaion to tflite format 
+3. Modify the **hair_segmentaion** demo application from mediapipe repository
+4. Build the portrait_segmentaion application for android devices using **bazel**
+5. Install and run the portrait_segmentation application on **mobile**
+
+Mediapipe slimnet application screenshot:-
+
+<p align="left">
+  <img  src="mediapipe_slimnet/mediapipe_app.jpg" height="420" width="240">
+</p>
+
+Mediapipe portrait_segmentation(APK): [slimnet android](https://drive.google.com/file/d/1-67V2MFGmPRJadENxvnqnYiuI6XpD70g/view?usp=sharing) 
+
+In the android demo, we used the default **mask_overlay_calculator** for performing alpha blending operation. Now, if we want to perfrom some advanced blending opertations, we will have to implement it as a **custom calculator** in mediapipe. In this [demo](https://github.com/anilsathyan7/Portrait-Segmentation/blob/master/mediapipe_slimnet/desktop/mediapipe_custom_calculator.ipynb), we will build a portrait segmentaion aplication using custom calculators on desktop, using mediapipe. There will be two inputs: a portrait video and a background video and a single output in the form of a video file. Our aim is to **blend** the portrait foreground region into the background video, with the help of a **segmentaion mask**. As in the case of android, we will follow the basic segmentation pipeline from **hair segmentaion** example. Since the application uses **gpu** operations, choose a GPU runtime for development and deployment.
+
+Portrait segmentation desktop:-
+
+<p align="left">
+  <img  src="mediapipe_slimnet/desktop/seamless_clone.gif">
+</p>
+
+
+
 ### Segmentation via Background Subtraction: A Naive Approach
 
 If we have a **static background**, we can easily obtain the mask of new objects appearing on the scene using the methods of background subtraction. Even though this seems straight-forward; there seems to be couple of **challenges** in this scenario. Firstly, even if objects does not move in the background, there will be small variations in corresponding pixel values due to changes in **lighting**, noise, camera quality etc. Secondly, if the new objects have **colour** similar to that of the background, it becomes difficult to find the **image difference**.
@@ -834,8 +985,12 @@ The **portrait-net and prisma-net** models were successfully converted to quanti
 21. The minimalistic version of **mobilenetv3** with **depth-multiplier 1 and input size 224** has almost the **same latency** as the **mobilenetv2** with **input size 128 and depth multiplier 0.5**. The accuracy was also found to be same on the test-datastet; however the edges of the segmentation map was **much smoother** in mobilenetv3, with higher image size. Theoretically, it should also be able to capture **more details** than the smaller 128 model.
 22. Instead of using an explicit softmax layer as the final layer of the model during training, pushing this **softmax** activation into the cross-entropy loss layer(with **from_logits=True**) significantly simplifies the loss computation and makes it more **numerically stable**. In the training dataset, the input images may be encoded in **jpg** format for saving memory; but the segmentation masks should be saved in **png** format(lossless). Also during preprocessing step, ensure that you use **nearest neighbour interpolation**  while resizing the segmentation masks(hard labels). 
 23. A fully quantized tflite seems to be significantly slower than float32 version, while performing inference on a pc using tflite python interpreter.But for **mobile CPUs**, considerable speedup can be observed. On the other hand, the quantized model gives more than **10x** speed-up on a **edge TPU** compared to the float32 model on **CPU**.
-24. No amount of skillful **post-processing** and attempting to extract useful data from the output will make up for a **poor model choice**, or one where too many **sacrifices** were made for **speed**.
-25. Recently, many vendors like Apple, Huawei and Qualcomm have come up with their own **Vision API's, NPU's, DSP's, ISP's** etc. The performace of these devices seems to be on par with the high-end PC's. After model exporting, we can directly run them on **high resolution** images in real-time. However, many of the features are still **experimental**, some are **not open-source** and there is a **lack of proper standardization** among the hardware and software vendors in this domain.
+24. Most of the standard person/portrait segmentation datasets contain lots of images different from the real world mobile phone portraits. A large number of images have **plain or blurred backgrounds** and most of them are captured under **good/ideal lighting** conditions. Even if we replace the background with image composting techniques, the resulting images looks **unnatural**. 
+25. In general, trimap-free models always tend to **overfit** the training set and cannot generaliz well on realworld data. On the other hand trimap models which contain additional layers for techniques like **boundary attention, high resolution feature fusion** etc.,  for improving the boundary details(eg. fine hair details) have **higher execution time** on mobile devices.
+26. The original **deeplab model** was trained using pascal voc dataset, with white edges(similar to trimaps) around subject boundaries in labels set to be **ignored class**(pixels). In the original **portrait-net** architecture none of the convolutional layers contain a **bias** term.
+27. No amount of skillful **post-processing** and attempting to extract useful data from the output will make up for a **poor model choice**, or one where too many **sacrifices** were made for **speed**.
+28. Usage of **strided convolution or pooling layer** helps us to capture global information by enlarging receptive field size; but they can also lead to **loss of detailed local information**.
+29. Recently, many vendors like Apple, Huawei and Qualcomm have come up with their own **Vision API's, NPU's, DSP's, ISP's** etc. The performace of these devices seems to be on par with the high-end PC's. After model exporting, we can directly run them on **high resolution** images in real-time. However, many of the features are still **experimental**, some are **not open-source** and there is a **lack of proper standardization** among the hardware and software vendors in this domain.
 
 
 ## TODO
@@ -852,6 +1007,10 @@ The **portrait-net and prisma-net** models were successfully converted to quanti
 - [ ] Incroporate **depth** information
 - [ ] Apply **photorealistic style transfer** on foreground based on **background image**
 
+## License
+
+This project is licensed under the terms of the [MIT](LICENSE) license.
+
 ## Versioning
 
 Version 1.0
@@ -866,6 +1025,7 @@ Anil Sathyan
 * https://github.com/cainxx/image-segmenter-ios
 * https://github.com/gallifilo/final-year-project
 * https://github.com/dong-x16/PortraitNet
+* https://github.com/ZHKKKe/MODNet
 * https://github.com/clovaai/ext_portrait_segmentation
 * https://github.com/tantara/JejuNet
 * https://github.com/lizhengwei1992/mobile_phone_human_matting
@@ -932,3 +1092,5 @@ Anil Sathyan
 * [Google: Machine Learning Bootcamp for Mobile Developers](https://www.youtube.com/watch?v=uMokEy_921Q)
 * [Machinethink: New mobile neural network architectures](https://machinethink.net/blog/mobile-architectures/)
 * [Deeplab Tflite Tfhub](https://tfhub.dev/s?publisher=sayakpaul)
+* [MediaPipe with Custom tflite Model](https://blog.gofynd.com/mediapipe-with-custom-tflite-model-d3ea0427b3c1)
+* [Google Mediapipe Github](https://github.com/google/mediapipe)
